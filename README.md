@@ -1,2 +1,4 @@
 # HMM
-HMM 구현 노트
+1. DHMM 구현
+
+2. CHMM 구현

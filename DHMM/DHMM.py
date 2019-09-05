@@ -7,7 +7,7 @@ import seaborn as sns
 import math
 import time, os
 import codecs, json
-import bokeh.plotting as bp
+import bokeh.plotting as bp 
 
 class HMM:
     def __init__(self, N=0, M=0, data=None, load=False, params_file=None):
@@ -30,6 +30,7 @@ class HMM:
             self.B = self._init_random_prob(self.N, self.M)
 
         self.visualization_training_result()
+        self.save_init_params()
         # for Q function
         self._init_probs()
         self.ll = 0.0
@@ -66,7 +67,7 @@ class HMM:
         for t in range(self.T):
             for i in range(self.N):
                 if t == 0:
-                    self._beta[0][i] = 1
+                    self._beta[t][i] = 1
                 else:
                     for j in range(self.N):
                         self._beta[t][i] += self._beta[t-1][j] * self.A[i][j] * self.B[j][self.data[self.T-t]]
@@ -145,43 +146,45 @@ class HMM:
 
     def evaluate(self, num, tol):
         print('====================')
-        # print(self._ct)
-        for t in range(self.T):
-            self._ct[t] = math.log(self._ct[t])
-        ll_ = np.sum(self._ct)
-        ll_ = -ll_
-        differ = abs(ll_ - self.ll)
-        print('iteration #', num+1, ' / ll : ', ll_,' / differ : ', differ)
-        if differ <= tol or ll_ < self.ll:
+        ll = -math.log(np.sum(self._ct[self.T-1]*self._alpha[self.T-1]))
+
+        differ = ll - self.ll
+        print('iteration #', num+1, ' / loglikelihood : ', ll,' / differ : ', differ)
+        if differ <= tol:
             return -1
         else:
-            self.ll = ll_
+            self.ll = ll
             return 0
         # return 0
 
     def decode(self):
         # for decoding : viterbi
-        self._delta = np.zeros(self.T)
+        self._delta = np.zeros((self.T, self.N))
         self._psi = np.zeros(self.T)
+        
+        for t in range(self.T):
+            if t == 0:
+                delta = self.pi.reshape(1, -1) * self.B.T[self.data[t]]
+                self._delta[t] += delta.reshape(-1)
+                self._psi[t] = 0
+            else :
+                tmp = self._delta[t-1] * self.A[int(self._psi[t-1])]
+                self._delta[t] = np.max(tmp) * self.B.T[self.data[t]]
+                self._psi[t] = np.argmax(tmp)
 
-        delta = self.pi.reshape(1, -1) * self.B.T[self.data[0]]
-        delta = delta.reshape(-1)
-        # normalization
-        delta /= np.sum(delta)
-
-        t = 0
-        while True:
-            self._delta[t] = delta[0]
-            self._psi[t] = 0
-            for i in range(1,self.N):
-                if self._delta[t] < delta[i] :
-                    self._delta[t] = delta[i]
-                    self._psi[t] = i
-            t = t + 1
-            if(t >= self.T): break
-            delta = self._delta[t-1] * self.A[int(self._psi[t-1])] * self.B.T[self.data[t]]
-            # normalization
-            delta /= np.sum(delta)
+        # t = 0
+        # while True:
+        #     self._delta[t] = delta[0]
+        #     self._psi[t] = 0
+        #     for i in range(1,self.N):
+        #         if self._delta[t] < delta[i] :
+        #             self._delta[t] = delta[i]
+        #             self._psi[t] = i
+        #     t = t + 1
+        #     if(t >= self.T): break
+        #     delta = self._delta[t-1] * self.A[int(self._psi[t-1])] * self.B.T[self.data[t]]
+        #     # normalization
+        #     delta /= np.sum(delta)
         return
 
     def visualization(self, show=False):
@@ -217,12 +220,11 @@ class HMM:
 
     def visualization_decoding_result(self, show=False):
         fig = plt.figure()
-        T = len(self.data)
-        X = range(T)
+        X = range(self.T)
         plt.plot(X, self._psi)
         plt.scatter(X, self._psi)
-        for t in range(T):
-            plt.text(t+0.01, self._psi[t], round(self._delta[t],3), fontsize=8)
+        for t in range(self.T):
+            plt.text(t+0.01, self._psi[t], round(max(self._delta[t]),3), fontsize=8)
         self._figures.append(fig)
 
         p = bp.figure(
@@ -251,7 +253,6 @@ class HMM:
         return
 
     def save_params(self):
-        os.mkdir(self.save_path)
         file = str(self.N)+'-'+str(self.T)+'-params.json'
 
         params = {
@@ -263,6 +264,21 @@ class HMM:
              'scaling factor : ' : self._ct.tolist(),
              'gammar : ' : self._gammar.tolist(),
              'csi : ' : self._csi.tolist()
+        }
+        jsonString = json.dumps(params)
+
+        with open(self.save_path+file, 'w') as f:
+            f.write(jsonString)
+        return
+
+    def save_init_params(self):
+        os.mkdir(self.save_path)
+        file = str(self.N)+'-'+str(self.T)+'-init_params.json'
+
+        params = {
+            'initial_probs': self.pi.tolist(),
+            'transition_matrix': self.A.tolist(),
+            'emission_matrix': self.B.tolist(),
         }
         jsonString = json.dumps(params)
 
@@ -283,10 +299,11 @@ if __name__ == "__main__":
     with open('cointossdata.txt','r') as fp:
         line = fp.readline()
     data = [int(i) for i in line]
+
     hmm = HMM(2,2,data[:100])
     hmm.train()
     hmm.decode()
-    hmm.visualization(False)
+    hmm.visualization(True)
     # hmm = HMM(2, 2, data, True, './result_2019-08-30-1756/params.json')
     # HMM(2,2,data).load_params('./result_2019-08-30-1756/params.json')
 # ~~~
